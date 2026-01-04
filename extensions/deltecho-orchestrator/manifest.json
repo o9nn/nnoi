@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "@deltecho/orchestrator",
+  "version": "1.0.0",
+  "homepage": "https://github.com/o9nn/deltecho",
+  "description": "Deep Tree Echo Orchestration Model - Layered cognitive orchestration with Sys6 operadic composition and Dove9 triadic cognitive loops.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["orchestrator.js"],
+      "run_at": "document_end",
+      "world": "MAIN"
+    }
+  ]
+}

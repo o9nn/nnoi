@@ -25,6 +25,14 @@
       "url": "https://github.com/lencx/Noi/tree/main/extensions/noi-reset",
       "dirname": "noi-reset",
       "disabled": false
+    },
+    {
+      "name": "@deltecho/orchestrator",
+      "description": "Deep Tree Echo Orchestration Model - Layered cognitive orchestration with Sys6 operadic composition and Dove9 triadic cognitive loops.",
+      "version": "1.0.0",
+      "url": "https://github.com/o9nn/deltecho",
+      "dirname": "deltecho-orchestrator",
+      "disabled": false
     }
   ]
 }
