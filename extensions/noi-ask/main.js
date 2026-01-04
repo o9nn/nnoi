@@ -446,7 +446,12 @@ class YuanbaoAsk extends NoiAsk {
     const inputElement = document.querySelector('[contenteditable=true]');
     if (inputElement) {
       inputElement.focus();
-      inputElement.innerHTML = message;
+      inputElement.innerHTML = ''; // Clear existing content safely
+
+      // Use textContent to prevent XSS - safely escapes HTML entities
+      const span = document.createElement('span');
+      span.textContent = message;
+      inputElement.appendChild(span);
     }
   }
 
