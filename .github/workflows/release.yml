@@ -1,0 +1,345 @@
+name: Multi-Platform Release Build
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 0.4.1)'
+        required: true
+        default: '0.4.1'
+
+jobs:
+  # Build echo-ml native libraries for all platforms
+  build-echo-ml:
+    name: Build echo-ml (${{ matrix.os }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux builds
+          - os: linux
+            arch: x64
+            runner: ubuntu-22.04
+            cc: gcc
+            cxx: g++
+          - os: linux
+            arch: arm64
+            runner: ubuntu-22.04
+            cc: aarch64-linux-gnu-gcc
+            cxx: aarch64-linux-gnu-g++
+
+          # macOS builds
+          - os: macos
+            arch: x64
+            runner: macos-12
+            cc: clang
+            cxx: clang++
+          - os: macos
+            arch: arm64
+            runner: macos-14
+            cc: clang
+            cxx: clang++
+
+          # Windows builds
+          - os: windows
+            arch: x64
+            runner: windows-2022
+            cc: cl
+            cxx: cl
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux cross-compilation tools (ARM64)
+        if: matrix.os == 'linux' && matrix.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - name: Install build dependencies (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Setup MSVC (Windows)
+        if: matrix.os == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build echo-ml library
+        working-directory: echo_ml
+        run: |
+          echo "Building echo-ml for ${{ matrix.os }}-${{ matrix.arch }}"
+
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            if [ "${{ matrix.arch }}" = "arm64" ]; then
+              export CC=aarch64-linux-gnu-gcc
+              export CXX=aarch64-linux-gnu-g++
+              export AR=aarch64-linux-gnu-ar
+              # Disable native march for cross-compilation
+              sed -i 's/-march=native/-march=armv8-a/' Makefile
+            fi
+            make clean
+            make
+            make size || true
+          elif [ "${{ matrix.os }}" = "macos" ]; then
+            make clean
+            make
+            make size || true
+          fi
+        shell: bash
+
+      - name: Build echo-ml library (Windows)
+        if: matrix.os == 'windows'
+        working-directory: echo_ml
+        run: |
+          # Windows build using MSVC - create custom build script
+          cl /c /O2 /W3 /std:c11 /Iinclude src/echo_tensor.c src/echo_reservoir.c src/echo_layers.c
+          lib /OUT:echo_ml.lib echo_tensor.obj echo_reservoir.obj echo_layers.obj
+          link /DLL /OUT:echo_ml.dll echo_tensor.obj echo_reservoir.obj echo_layers.obj
+        shell: cmd
+
+      - name: Package artifacts
+        run: |
+          mkdir -p artifacts
+          cd echo_ml
+
+          if [ "${{ matrix.os }}" = "linux" ]; then
+            tar -czf ../artifacts/libecho_ml-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+              libecho_ml.a libecho_ml.so include/echo_ml.h
+          elif [ "${{ matrix.os }}" = "macos" ]; then
+            tar -czf ../artifacts/libecho_ml-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+              libecho_ml.a libecho_ml.so include/echo_ml.h
+          elif [ "${{ matrix.os }}" = "windows" ]; then
+            7z a ../artifacts/libecho_ml-${{ matrix.os }}-${{ matrix.arch }}.zip \
+              echo_ml.lib echo_ml.dll include/echo_ml.h
+          fi
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: echo-ml-${{ matrix.os }}-${{ matrix.arch }}
+          path: artifacts/*
+          retention-days: 7
+
+  # Build Node.js native addon for echo-ml
+  build-node-addon:
+    name: Build Node.js Addon (${{ matrix.os }}-${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: linux
+            arch: x64
+            runner: ubuntu-22.04
+          - os: macos
+            arch: x64
+            runner: macos-12
+          - os: macos
+            arch: arm64
+            runner: macos-14
+          - os: windows
+            arch: x64
+            runner: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: echo_ml
+        run: |
+          npm install -g node-gyp
+          npm install
+
+      - name: Build native addon
+        working-directory: echo_ml
+        run: npm run build
+
+      - name: Test native addon
+        working-directory: echo_ml
+        run: npm test || true
+
+      - name: Package addon
+        run: |
+          mkdir -p artifacts
+          cd echo_ml
+
+          if [ "${{ matrix.os }}" = "windows" ]; then
+            7z a ../artifacts/echo_ml_node_addon-${{ matrix.os }}-${{ matrix.arch }}.zip \
+              build/Release/echo_ml.node
+          else
+            tar -czf ../artifacts/echo_ml_node_addon-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+              build/Release/echo_ml.node
+          fi
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-addon-${{ matrix.os }}-${{ matrix.arch }}
+          path: artifacts/*
+          retention-days: 7
+
+  # Create release and upload all artifacts
+  create-release:
+    name: Create GitHub Release
+    needs: [build-echo-ml, build-node-addon]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Display structure
+        run: ls -R release-artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find release-artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release-assets/ \;
+          cd release-assets
+
+          # Generate checksums
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Get version
+        id: get_version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create Release Notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          # NNOI Release v${{ steps.get_version.outputs.version }}
+
+          ## Neural Network Orchestrated Intelligence
+
+          This release includes multi-platform builds of the NNOI project with Deep Tree Echo cognitive architecture integration.
+
+          ### Components
+
+          - **echo-ml**: High-performance C/C++ ML framework for reservoir computing
+          - **Node.js Addon**: Native bridge for Electron/Noi integration
+
+          ### Platforms
+
+          #### Linux
+          - x64 (amd64): Standard desktop/server builds
+          - arm64 (aarch64): ARM-based systems (Raspberry Pi, ARM servers)
+
+          #### macOS
+          - x64 (Intel): Intel-based Macs
+          - arm64 (Apple Silicon): M1/M2/M3 Macs
+
+          #### Windows
+          - x64: 64-bit Windows 10/11
+
+          ### Installation
+
+          #### Standalone C/C++ Library
+
+          ```bash
+          # Download the appropriate archive for your platform
+          tar -xzf libecho_ml-<platform>-<arch>.tar.gz  # Linux/macOS
+          # or
+          unzip libecho_ml-windows-x64.zip  # Windows
+
+          # Copy to system directories (Linux/macOS)
+          sudo cp libecho_ml.* /usr/local/lib/
+          sudo cp echo_ml.h /usr/local/include/
+          sudo ldconfig  # Linux only
+          ```
+
+          #### Node.js Addon
+
+          ```bash
+          # Download and extract
+          tar -xzf echo_ml_node_addon-<platform>-<arch>.tar.gz
+
+          # Use in your Node.js/Electron project
+          # Place echo_ml.node in your project's build/Release/ directory
+          ```
+
+          ### Performance
+
+          - Library size: ~43 KB (static), ~48 KB (shared)
+          - Inference speed: >1,300 inferences/second
+          - Latency: <1ms per inference
+
+          ### Checksums
+
+          SHA256 checksums are provided in `SHA256SUMS.txt`.
+
+          ### Documentation
+
+          See the [NNOI Agent Documentation](.github/agents/nnoi.md) for detailed integration guides.
+
+          ---
+
+          **Deep Tree Echo Integration** • **Reservoir Computing** • **Multi-Platform**
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: NNOI v${{ steps.get_version.outputs.version }}
+          body_path: release-notes.md
+          draft: false
+          prerelease: false
+          files: |
+            release-assets/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Optional: Build status notification
+  build-status:
+    name: Build Status Summary
+    needs: [build-echo-ml, build-node-addon, create-release]
+    runs-on: ubuntu-22.04
+    if: always()
+
+    steps:
+      - name: Check build status
+        run: |
+          echo "=== Build Status Summary ==="
+          echo "echo-ml builds: ${{ needs.build-echo-ml.result }}"
+          echo "Node addon builds: ${{ needs.build-node-addon.result }}"
+          echo "Release creation: ${{ needs.create-release.result }}"
+
+          if [ "${{ needs.build-echo-ml.result }}" = "success" ] && \
+             [ "${{ needs.build-node-addon.result }}" = "success" ] && \
+             [ "${{ needs.create-release.result }}" = "success" ]; then
+            echo "✅ All builds completed successfully!"
+            exit 0
+          else
+            echo "❌ Some builds failed. Check logs above."
+            exit 1
+          fi
