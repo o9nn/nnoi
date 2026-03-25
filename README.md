@@ -113,6 +113,7 @@ Learn more: [electronjs/doc](https://www.electronjs.org/docs/latest/api/extensio
 | [@noi/ask](https://github.com/lencx/Noi/tree/main/extensions/noi-ask) | 0.2.2 | The best assistant for batch asking and quick typing of prompts. |
 | [@noi/ask-custom](https://github.com/lencx/Noi/tree/main/extensions/noi-ask-custom) | 0.1.0 | The best assistant for batch asking and quick typing of prompts. |
 | [@noi/reset](https://github.com/lencx/Noi/tree/main/extensions/noi-reset) | 0.1.3 | Reset certain website styles to enhance compatibility with Noi. |
+| [@deltecho/orchestrator](https://github.com/o9nn/deltecho) | 1.0.0 | Deep Tree Echo Orchestration Model - Layered cognitive orchestration with Sys6 operadic composition and Dove9 triadic cognitive loops. |
 <!-- EXTENSIONS_END -->
 
 [![Star History Chart](https://api.star-history.com/svg?repos=lencx/Noi&type=Timeline)](https://star-history.com/#lencx/Noi&Timeline)

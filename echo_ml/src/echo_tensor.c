@@ -36,8 +36,10 @@ EchoError echo_tensor_alloc(EchoTensor* t, const size_t* shape, uint8_t ndim) {
         total *= shape[i];
     }
     
-    /* Align to 32 bytes for SIMD */
-    t->data = (echo_float*)aligned_alloc(32, total * sizeof(echo_float));
+    /* Align to 32 bytes for SIMD; size must be a multiple of alignment */
+    size_t byte_size = total * sizeof(echo_float);
+    byte_size = (byte_size + 31) & ~(size_t)31;  /* round up to 32-byte boundary */
+    t->data = (echo_float*)aligned_alloc(32, byte_size);
     if (!t->data) return ECHO_ERR_ALLOC;
     
     t->owns_data = true;

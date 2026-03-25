@@ -8,6 +8,7 @@
  * - Main EchoEngine orchestrator
  */
 
+#define _DEFAULT_SOURCE 1  /* enable strdup and other POSIX extensions */
 #include "echo_ml.h"
 #include <stdlib.h>
 #include <string.h>
@@ -190,16 +191,6 @@ void echo_dense_forward_batch(echo_float* output, const EchoDense* d,
 /* ============================================================================
  * DICTIONARY / TOKENIZATION
  * ============================================================================ */
-
-/* Simple hash function for string lookup */
-static uint32_t hash_string(const char* str) {
-    uint32_t hash = 5381;
-    int c;
-    while ((c = *str++)) {
-        hash = ((hash << 5) + hash) + c;
-    }
-    return hash;
-}
 
 EchoError echo_dict_load(EchoDict* dict, const char* path) {
     FILE* f = fopen(path, "r");
@@ -451,11 +442,14 @@ EchoError echo_engine_load(EchoEngine* engine, const char* path) {
     if (!f) return ECHO_ERR_FILE;
     
     /* Read and verify header */
-    uint32_t magic, version;
+    uint32_t magic = 0, version = 0;
     EchoConfig config;
-    fread(&magic, sizeof(magic), 1, f);
-    fread(&version, sizeof(version), 1, f);
-    fread(&config, sizeof(EchoConfig), 1, f);
+    if (fread(&magic, sizeof(magic), 1, f) != 1 ||
+        fread(&version, sizeof(version), 1, f) != 1 ||
+        fread(&config, sizeof(EchoConfig), 1, f) != 1) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     if (magic != 0x4543484F || version != 1) {
         fclose(f);
@@ -471,33 +465,50 @@ EchoError echo_engine_load(EchoEngine* engine, const char* path) {
     
     /* Read embedding weights */
     size_t embed_size = config.vocab_size * config.embedding_dim;
-    fread(engine->embedding.weights.data, sizeof(echo_float), embed_size, f);
+    if (fread(engine->embedding.weights.data, sizeof(echo_float), embed_size, f) != embed_size) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     /* Read reservoir W_in */
     size_t w_in_size = config.reservoir_size * config.embedding_dim;
-    fread(engine->reservoir.W_in.data, sizeof(echo_float), w_in_size, f);
+    if (fread(engine->reservoir.W_in.data, sizeof(echo_float), w_in_size, f) != w_in_size) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     /* Read reservoir W_out */
     size_t w_out_size = config.hidden_dim * config.reservoir_size;
-    fread(engine->reservoir.W_out.data, sizeof(echo_float), w_out_size, f);
+    if (fread(engine->reservoir.W_out.data, sizeof(echo_float), w_out_size, f) != w_out_size) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     /* Read reservoir W_res (sparse) - need to reallocate */
-    size_t nnz;
-    fread(&nnz, sizeof(size_t), 1, f);
+    size_t nnz = 0;
+    if (fread(&nnz, sizeof(size_t), 1, f) != 1) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     echo_sparse_free(&engine->reservoir.W_res);
     echo_sparse_alloc(&engine->reservoir.W_res, config.reservoir_size, 
                       config.reservoir_size, nnz);
     
-    fread(engine->reservoir.W_res.values, sizeof(echo_float), nnz, f);
-    fread(engine->reservoir.W_res.col_indices, sizeof(uint32_t), nnz, f);
-    fread(engine->reservoir.W_res.row_ptr, sizeof(uint32_t),
-          config.reservoir_size + 1, f);
+    if (fread(engine->reservoir.W_res.values, sizeof(echo_float), nnz, f) != nnz ||
+        fread(engine->reservoir.W_res.col_indices, sizeof(uint32_t), nnz, f) != nnz ||
+        fread(engine->reservoir.W_res.row_ptr, sizeof(uint32_t), config.reservoir_size + 1, f) != config.reservoir_size + 1) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     /* Read output layer */
     size_t out_w_size = config.output_dim * config.hidden_dim;
-    fread(engine->output_layer.weights.data, sizeof(echo_float), out_w_size, f);
-    fread(engine->output_layer.bias.data, sizeof(echo_float), config.output_dim, f);
+    if (fread(engine->output_layer.weights.data, sizeof(echo_float), out_w_size, f) != out_w_size ||
+        fread(engine->output_layer.bias.data, sizeof(echo_float), config.output_dim, f) != config.output_dim) {
+        fclose(f);
+        return ECHO_ERR_FILE;
+    }
     
     fclose(f);
     return ECHO_OK;
