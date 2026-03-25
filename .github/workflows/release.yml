@@ -33,11 +33,11 @@ jobs:
             cxx: aarch64-linux-gnu-g++
 
           # macOS builds
-          - os: macos
-            arch: x64
-            runner: macos-12
-            cc: clang
-            cxx: clang++
+#          - os: macos
+#            arch: x64
+#            runner: macos-12
+#            cc: clang
+#            cxx: clang++
           - os: macos
             arch: arm64
             runner: macos-14
@@ -141,9 +141,9 @@ jobs:
           - os: linux
             arch: x64
             runner: ubuntu-22.04
-          - os: macos
-            arch: x64
-            runner: macos-12
+#          - os: macos
+#            arch: x64
+#            runner: macos-12
           - os: macos
             arch: arm64
             runner: macos-14
