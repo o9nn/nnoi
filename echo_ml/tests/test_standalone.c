@@ -111,8 +111,8 @@ int main(void) {
                100.0f * sparse.nnz / (sparse.rows * sparse.cols));
         
         /* Test sparse matvec */
-        echo_float* x = aligned_alloc(32, n * sizeof(echo_float));
-        echo_float* y = aligned_alloc(32, n * sizeof(echo_float));
+        echo_float* x = aligned_alloc(32, ((n * sizeof(echo_float) + 31) & ~(size_t)31));
+        echo_float* y = aligned_alloc(32, ((n * sizeof(echo_float) + 31) & ~(size_t)31));
         for (size_t i = 0; i < n; i++) x[i] = echo_randn();
         
         echo_sparse_matvec(y, &sparse, x);
